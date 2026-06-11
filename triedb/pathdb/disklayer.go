@@ -85,6 +85,12 @@ type trienodebuffer interface {
 
 	// getLatestStatus returns latest status for disk layer
 	getLatestStatus() (common.Hash, uint64, error)
+
+	// lookup returns the blob for the given trie node if it is present in the
+	// buffer, without performing a hash check.  A nil blob with found=true means
+	// the node was written as a deletion.  found=false means the node is absent
+	// from the buffer entirely (caller should fall back to disk).
+	lookup(owner common.Hash, path []byte) (blob []byte, found bool)
 }
 
 type NodeBufferType int32
@@ -305,6 +311,29 @@ func (dl *diskLayer) commit(bottom *diffLayer, force bool) (*diskLayer, error) {
 			oldest = bottom.stateID() - limit + 1 // track the id of history **after truncation**
 		}
 	}
+	// Record before-values of all changing trie nodes for archive history.
+	// This must happen before buffer.commit overwrites the in-memory node cache.
+	if dl.db.config.StateHistory == 0 && len(bottom.nodes) > 0 {
+		batch := dl.db.diskdb.NewBatch()
+		for owner, subset := range bottom.nodes {
+			for path := range subset {
+				// Prefer the buffered value (most recent); fall back to disk.
+				beforeBlob, found := dl.buffer.lookup(owner, []byte(path))
+				if !found {
+					if owner == (common.Hash{}) {
+						beforeBlob, _ = rawdb.ReadAccountTrieNode(dl.db.diskdb, []byte(path))
+					} else {
+						beforeBlob, _ = rawdb.ReadStorageTrieNode(dl.db.diskdb, owner, []byte(path))
+					}
+				}
+				rawdb.WriteTrienodeHistory(batch, owner, []byte(path), bottom.stateID(), beforeBlob)
+			}
+		}
+		if err := batch.Write(); err != nil {
+			return nil, fmt.Errorf("failed to write trienode history: %v", err)
+		}
+	}
+
 	// Mark the diskLayer as stale before applying any mutations on top.
 	dl.stale = true
 

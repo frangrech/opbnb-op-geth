@@ -217,6 +217,24 @@ func (a *asyncnodebuffer) getLatestStatus() (common.Hash, uint64, error) {
 	return common.Hash{}, 0, errors.New("unsupported method for async node buffer")
 }
 
+// lookup implements trienodebuffer: returns the blob cached for (owner, path),
+// checking current then background cache, without hash validation.
+func (a *asyncnodebuffer) lookup(owner common.Hash, path []byte) ([]byte, bool) {
+	a.mux.RLock()
+	defer a.mux.RUnlock()
+	if subset, ok := a.current.nodes[owner]; ok {
+		if n, ok := subset[string(path)]; ok {
+			return n.Blob, true
+		}
+	}
+	if subset, ok := a.background.nodes[owner]; ok {
+		if n, ok := subset[string(path)]; ok {
+			return n.Blob, true
+		}
+	}
+	return nil, false
+}
+
 type nodecache struct {
 	layers    uint64                                    // The number of diff layers aggregated inside
 	size      uint64                                    // The size of aggregated writes

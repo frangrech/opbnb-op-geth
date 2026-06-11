@@ -88,6 +88,10 @@ func (db *Database) AncientRange(kind string, start, count, maxBytes uint64) ([]
 	panic("not supported")
 }
 
+func (db *Database) AncientBytes(kind string, id, offset, length uint64) ([]byte, error) {
+	panic("not supported")
+}
+
 func (db *Database) Ancients() (uint64, error) {
 	var resp uint64
 	err := db.remote.Call(&resp, "debug_dbAncients")

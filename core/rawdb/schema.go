@@ -466,3 +466,26 @@ func trienodeHistoryIndexBlockKey(addressHash common.Hash, path []byte, blockID 
 
 	return out
 }
+
+// trienodeHistoryEntryPrefixKey = TrienodeHistoryBlockPrefix + owner(32) + pathLen(1) + path
+// pathLen prevents key ambiguity when one path is a prefix of another.
+func trienodeHistoryEntryPrefixKey(owner common.Hash, path []byte) []byte {
+	totalLen := len(TrienodeHistoryBlockPrefix) + common.HashLength + 1 + len(path)
+	out := make([]byte, totalLen)
+	off := 0
+	off += copy(out[off:], TrienodeHistoryBlockPrefix)
+	off += copy(out[off:], owner.Bytes())
+	out[off] = byte(len(path))
+	off++
+	copy(out[off:], path)
+	return out
+}
+
+// trienodeHistoryEntryKey = TrienodeHistoryBlockPrefix + owner(32) + pathLen(1) + path + stateID(8, big-endian)
+func trienodeHistoryEntryKey(owner common.Hash, path []byte, stateID uint64) []byte {
+	prefix := trienodeHistoryEntryPrefixKey(owner, path)
+	out := make([]byte, len(prefix)+8)
+	copy(out, prefix)
+	binary.BigEndian.PutUint64(out[len(prefix):], stateID)
+	return out
+}

@@ -253,9 +253,15 @@ func (nf *nodebufferlist) linkMultiDiffLayers(blockIntervalLength int) {
 
 func (nf *nodebufferlist) readStateHistory(freezer *rawdb.ResettableFreezer, stateID uint64) (*history, error) {
 	h, err := readHistory(freezer, stateID, true)
-	if err != nil || h.nodes == nil {
+	if err != nil {
 		log.Error("Failed to read history from freezer db", "error", err)
 		return nil, err
+	}
+	if h.nodes == nil {
+		// The trie-nodes table was removed from the state freezer when PBSS archive
+		// mode was introduced. Fast recovery via the old trie-nodes-in-state-freezer
+		// path is no longer possible; the caller will fall back to a fresh buffer.
+		return nil, errors.New("trie nodes not present in state history (legacy fast-recovery data absent)")
 	}
 	return h, nil
 }
@@ -312,6 +318,62 @@ func (nf *nodebufferlist) getLatestStatus() (common.Hash, uint64, error) {
 	log.Info("last head multi diff layer info", "root", head.root, "id", head.id, "block", head.block,
 		"layer", head.layers, "size", head.size)
 	return head.root, head.id, nil
+}
+
+// lookup implements trienodebuffer: returns the cached blob for (owner, path)
+// by scanning head→tail then base, without hash validation.
+func (nf *nodebufferlist) lookup(owner common.Hash, path []byte) ([]byte, bool) {
+	nf.mux.RLock()
+	defer nf.mux.RUnlock()
+
+	if nf.useBase.Load() {
+		nf.baseMux.RLock()
+		subset, ok := nf.base.nodes[owner]
+		if !ok {
+			nf.baseMux.RUnlock()
+			return nil, false
+		}
+		n, ok := subset[string(path)]
+		nf.baseMux.RUnlock()
+		if !ok {
+			return nil, false
+		}
+		return n.Blob, true
+	}
+
+	var (
+		result []byte
+		found  bool
+	)
+	nf.traverse(func(nc *multiDifflayer) bool {
+		subset, ok := nc.nodes[owner]
+		if !ok {
+			return true
+		}
+		n, ok := subset[string(path)]
+		if !ok {
+			return true
+		}
+		result = n.Blob
+		found = true
+		return false
+	})
+	if found {
+		return result, true
+	}
+
+	nf.baseMux.RLock()
+	subset, ok := nf.base.nodes[owner]
+	if !ok {
+		nf.baseMux.RUnlock()
+		return nil, false
+	}
+	n, ok := subset[string(path)]
+	nf.baseMux.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return n.Blob, true
 }
 
 // node retrieves the trie node with given node info.

@@ -684,12 +684,15 @@ func checkAncientAndNodeBuffer(ancient string, nodeBufferType NodeBufferType) bo
 		if nodeBufferType == AsyncNodeBuffer || nodeBufferType == SyncNodeBuffer {
 			log.Warn(fmt.Sprintf("%s node buffer is deprecated!", nodeBufferTypeToString[nodeBufferType]))
 			log.Warn("Recommend using nodebufferlist!")
-			if err := rawdb.DeleteTrieNodesFile(ancient); err != nil {
-				log.Crit("Failed to delete trie nodes file", "error", err)
-			}
-			return false
 		}
-		return true
+		// Trie-nodes data in the state freezer is no longer supported after PBSS archive
+		// mode. NewStateFreezer calls CleanupUnusedAncientStores which will remove these
+		// files, and the table is absent from stateFreezerTableConfigs, so fast recovery
+		// via this path is impossible. Always return false to skip the recovery attempt.
+		if err := rawdb.DeleteTrieNodesFile(ancient); err != nil {
+			log.Crit("Failed to delete trie nodes file", "error", err)
+		}
+		return false
 	}
 	return false
 }

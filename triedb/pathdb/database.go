@@ -185,7 +185,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 	// ancient store. Otherwise, all the relevant functionalities are disabled.
 	if ancient, err := diskdb.AncientDatadir(); err == nil && ancient != "" && !db.readOnly {
 		db.fastRecovery = checkAncientAndNodeBuffer(ancient, config.TrieNodeBufferType)
-		freezer, err := rawdb.NewStateFreezer(ancient, false, db.fastRecovery)
+		freezer, err := rawdb.NewStateFreezer(ancient, false)
 		if err != nil {
 			log.Crit("Failed to open state history freezer", "err", err)
 		}
@@ -247,6 +247,13 @@ func (db *Database) Reader(root common.Hash) (layer, error) {
 		r, err := db.tree.bottom().buffer.proposedBlockReader(root)
 		if err == nil && r != nil {
 			return r, nil
+		}
+		// For archive nodes (StateHistory == 0), fall back to the KV trienode
+		// history index for states that have been committed to disk.
+		if db.config.StateHistory == 0 {
+			if id := rawdb.ReadStateID(db.diskdb, root); id != nil {
+				return newHistoricalDiskLayer(root, *id, db), nil
+			}
 		}
 		return nil, fmt.Errorf("state %#x is not available", root)
 	}

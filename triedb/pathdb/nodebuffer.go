@@ -311,3 +311,17 @@ func (b *nodebuffer) proposedBlockReader(blockRoot common.Hash) (layer, error) {
 func (b *nodebuffer) getLatestStatus() (common.Hash, uint64, error) {
 	return common.Hash{}, 0, errors.New("unsupported method for node buffer")
 }
+
+// lookup implements trienodebuffer: returns the blob cached in the buffer for
+// (owner, path), without any hash check. found=false if not present.
+func (b *nodebuffer) lookup(owner common.Hash, path []byte) ([]byte, bool) {
+	subset, ok := b.nodes[owner]
+	if !ok {
+		return nil, false
+	}
+	n, ok := subset[string(path)]
+	if !ok {
+		return nil, false
+	}
+	return n.Blob, true
+}

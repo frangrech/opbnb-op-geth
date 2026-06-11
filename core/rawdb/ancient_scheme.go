@@ -107,6 +107,9 @@ var (
 	MerkleStateFreezerName    = "state"    // the folder name of reverse diff ancient store.
 	MerkleTrienodeFreezerName = "trienode" // the folder name of trienode history ancient store.
 
+	// StateFreezerName is an alias for MerkleStateFreezerName kept for backward compatibility.
+	StateFreezerName = MerkleStateFreezerName
+
 	// Used to get withdraw proof, shouble be deleted after supporting pbsss archive mode.
 	ProofFreezerName = "proof" // the folder name of propose withdraw proof store.
 )
@@ -155,6 +158,42 @@ func CleanupUnusedAncientStores(ancientDir string) error {
 			return err
 		}
 		log.Info("Removed unused trienodes ancient file", "path", filePath)
+	}
+	return nil
+}
+
+// DetectTrieNodesFile reports whether any trie-nodes data files exist in the
+// state freezer subdirectory of ancientDir. These files were used for fast
+// recovery before PBSS archive mode was supported.
+func DetectTrieNodesFile(ancientDir string) bool {
+	statePath := filepath.Join(ancientDir, MerkleStateFreezerName)
+	entries, err := os.ReadDir(statePath)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.Contains(entry.Name(), "trienodes") {
+			return true
+		}
+	}
+	return false
+}
+
+// DeleteTrieNodesFile removes all trie-nodes data files from the state freezer
+// subdirectory of ancientDir.
+func DeleteTrieNodesFile(ancientDir string) error {
+	statePath := filepath.Join(ancientDir, MerkleStateFreezerName)
+	entries, err := os.ReadDir(statePath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.Contains(entry.Name(), "trienodes") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(statePath, entry.Name())); err != nil {
+			return err
+		}
 	}
 	return nil
 }
